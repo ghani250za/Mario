@@ -3,567 +3,739 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>قاذف الكويكبات</title>
+    <title>سوبر مغامر</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@700&display=swap');
 
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #0b0e14;
+            background-color: #5c94fc; /* لون السماء */
             font-family: 'Cairo', sans-serif;
-            touch-action: none; /* لمنع التكبير والتمرير في الهواتف */
+            touch-action: none;
             user-select: none;
+            -webkit-user-select: none;
         }
 
-        #gameCanvas {
-            display: block;
+        #game-container {
+            position: relative;
             width: 100%;
             height: 100vh;
         }
 
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* واجهة المستخدم */
         #ui-layer {
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .hud-text {
+            color: white;
+            font-size: 24px;
+            text-shadow: 2px 2px 0 #000;
+            font-weight: bold;
+        }
+
+        /* أزرار التحكم للموبايل */
+        #controls {
+            position: absolute;
+            bottom: 20px;
             width: 100%;
-            height: 100%;
+            height: 120px;
             pointer-events: none;
             display: flex;
-            flex-direction: column;
             justify-content: space-between;
-            padding: 20px;
+            padding: 0 20px;
             box-sizing: border-box;
+            z-index: 20;
         }
 
-        .score-board {
-            color: #fff;
-            font-size: 24px;
-            text-shadow: 0 0 10px #00d2ff;
+        .control-group {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto;
         }
 
-        #start-screen, #game-over-screen {
+        .btn {
+            width: 70px;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            color: white;
+            user-select: none;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        .btn:active {
+            background: rgba(255, 255, 255, 0.5);
+            transform: scale(0.95);
+        }
+
+        .btn-rect {
+            border-radius: 15px;
+            width: 80px;
+        }
+
+        /* الشاشات المنبثقة */
+        #overlay {
             position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.7);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            z-index: 30;
             color: white;
-            pointer-events: auto;
-            z-index: 10;
         }
 
         h1 {
-            font-size: 40px;
-            margin-bottom: 10px;
+            font-size: 48px;
             color: #ffcc00;
-            text-align: center;
+            text-shadow: 3px 3px 0 #d35400;
+            margin: 0 0 20px 0;
         }
 
-        p {
-            font-size: 18px;
-            color: #ccc;
-            text-align: center;
-            max-width: 80%;
-        }
-
-        button {
-            background: linear-gradient(45deg, #ff4b1f, #ff9068);
+        .game-btn {
+            background: linear-gradient(#e67e22, #d35400);
             border: none;
             padding: 15px 40px;
             color: white;
-            font-size: 20px;
+            font-size: 24px;
             font-family: 'Cairo', sans-serif;
-            border-radius: 50px;
+            border-radius: 10px;
             cursor: pointer;
-            margin-top: 20px;
-            box-shadow: 0 4px 15px rgba(255, 75, 31, 0.4);
-            transition: transform 0.2s;
+            box-shadow: 0 6px 0 #a04000;
+            transition: transform 0.1s;
         }
 
-        button:active {
-            transform: scale(0.95);
+        .game-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #a04000;
         }
 
-        .hidden {
-            display: none !important;
+        .hidden { display: none !important; }
+
+        /* إخفاء عناصر التحكم على الشاشات الكبيرة إذا كان هناك لوحة مفاتيح */
+        @media (min-width: 1024px) {
+            #controls { opacity: 0.6; } /* نخففها قليلاً للكمبيوتر أو نخفيها */
         }
     </style>
 </head>
 <body>
 
-    <canvas id="gameCanvas"></canvas>
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
 
-    <div id="ui-layer">
-        <div class="score-board">النقاط: <span id="scoreVal">0</span></div>
-    </div>
+        <div id="ui-layer">
+            <div class="hud-text">النقاط: <span id="score">0</span></div>
+            <div class="hud-text">المستوى: 1</div>
+        </div>
 
-    <!-- شاشة البداية -->
-    <div id="start-screen">
-        <h1>قاذف الكويكبات</h1>
-        <p>اسحب الكويكب للخلف ثم أفلته لإطلاقه نحو الأعداء.</p>
-        <p>احمِ الأرض من الغزاة!</p>
-        <button onclick="startGame()">ابدأ اللعب</button>
-    </div>
+        <div id="overlay">
+            <h1>سوبر مغامر</h1>
+            <p style="font-size: 18px; margin-bottom: 30px; text-align: center; max-width: 80%;">
+                استخدم الأسهم للحركة والمسافة للقفز.<br>
+                أو استخدم الأزرار على الشاشة.
+            </p>
+            <button class="game-btn" onclick="startGame()">ابدأ اللعب</button>
+        </div>
 
-    <!-- شاشة نهاية اللعبة -->
-    <div id="game-over-screen" class="hidden">
-        <h1>انتهت اللعبة</h1>
-        <p>النقاط النهائية: <span id="finalScore">0</span></p>
-        <button onclick="resetGame()">العب مجدداً</button>
+        <div id="controls">
+            <div class="control-group">
+                <div class="btn" id="btn-left">◀</div>
+                <div class="btn" id="btn-right">▶</div>
+            </div>
+            <div class="control-group">
+                <div class="btn btn-rect" id="btn-jump" style="background: rgba(255, 200, 0, 0.4);">قفز</div>
+            </div>
+        </div>
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const scoreEl = document.getElementById('scoreVal');
-        const finalScoreEl = document.getElementById('finalScore');
-        const startScreen = document.getElementById('start-screen');
-        const gameOverScreen = document.getElementById('game-over-screen');
-
-        let width, height;
-        let animationId;
-        let lastTime = 0;
-        let score = 0;
-        let gameActive = false;
+        const scoreEl = document.getElementById('score');
+        const overlay = document.getElementById('overlay');
 
         // إعدادات اللعبة
-        const EARTH_RADIUS = 40;
-        const ASTEROID_RADIUS = 15;
-        const ENEMY_RADIUS = 20;
-        const SPAWN_RATE = 1500; // مللي ثانية
-
-        // حالة الإدخال (الماوس/اللمس)
-        let dragStart = null;
-        let currentDrag = null;
-        let isDragging = false;
+        const TILE_SIZE = 40;
+        let GRAVITY = 0.6;
+        let mapWidth = 0;
+        let mapHeight = 0;
         
-        // الكائنات
-        let earth;
-        let playerAsteroid;
+        let gameState = 'START'; // START, PLAYING, GAMEOVER, WIN
+        let score = 0;
+        let animationId;
+
+        // المدخلات
+        const keys = {
+            left: false,
+            right: false,
+            up: false
+        };
+
+        // الكاميرا
+        const camera = {
+            x: 0,
+            y: 0
+        };
+
+        // خريطة المستوى (1: أرض، 0: فراغ، 2: عملة، 3: عدو، 9: نهاية)
+        // سنقوم بتوليدها أو كتابتها كمصفوفة طويلة
+        const levelMapDesign = [
+            "                                                                    ",
+            "                                                                    ",
+            "                                                                    ",
+            "                                                                    ",
+            "      2 2 2                                                         ",
+            "     1111111                                            9           ",
+            "                                                      111           ",
+            "                   2  2                               111           ",
+            "                  111111       2                      111           ",
+            "                             1111                     111           ",
+            "           3                111111          3         111           ",
+            "        11111              11111111      11111111     111           ",
+            "                                                                    ",
+            "   2        3           3                             2             ",
+            "1111111111111111   1111111111111111111  1111111111111111111111111111"
+        ];
+        // سنحول الخريطة النصية إلى مصفوفة رقمية ونوسعها
+        
+        let tiles = [];
+        let coins = [];
         let enemies = [];
-        let projectiles = []; // الكويكبات التي تم إطلاقها
         let particles = [];
-        let stars = [];
-        let lastSpawnTime = 0;
+        let finishLine = null;
 
-        // فئات اللعبة (Classes)
-
-        class Vector {
-            constructor(x, y) { this.x = x; this.y = y; }
-            add(v) { return new Vector(this.x + v.x, this.y + v.y); }
-            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
-            mult(n) { return new Vector(this.x * n, this.y * n); }
-            mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
-            normalize() {
-                let m = this.mag();
-                return m === 0 ? new Vector(0, 0) : new Vector(this.x / m, this.y / m);
+        class Player {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = TILE_SIZE - 10;
+                this.height = TILE_SIZE - 10;
+                this.vx = 0;
+                this.vy = 0;
+                this.speed = 5;
+                this.jumpPower = -14;
+                this.grounded = false;
+                this.facingRight = true;
+                this.color = '#e74c3c'; // أحمر ماريو
             }
-        }
 
-        class Star {
-            constructor() {
-                this.pos = new Vector(Math.random() * width, Math.random() * height);
-                this.size = Math.random() * 2;
-                this.alpha = Math.random();
-                this.twinkleSpeed = Math.random() * 0.05;
-            }
             update() {
-                this.alpha += this.twinkleSpeed;
-                if (this.alpha > 1 || this.alpha < 0) this.twinkleSpeed *= -1;
-            }
-            draw() {
-                ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(this.alpha)})`;
-                ctx.beginPath();
-                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
+                // الحركة الأفقية
+                if (keys.left) {
+                    this.vx = -this.speed;
+                    this.facingRight = false;
+                } else if (keys.right) {
+                    this.vx = this.speed;
+                    this.facingRight = true;
+                } else {
+                    this.vx *= 0.8; // احتكاك
+                }
 
-        class Earth {
-            constructor() {
-                this.pos = new Vector(width / 2, height / 2);
-                this.radius = EARTH_RADIUS;
-                this.health = 100;
+                this.x += this.vx;
+                this.checkHorizontalCollisions();
+
+                // الحركة العمودية
+                if (keys.up && this.grounded) {
+                    this.vy = this.jumpPower;
+                    this.grounded = false;
+                    createDust(this.x + this.width/2, this.y + this.height);
+                }
+
+                this.vy += GRAVITY;
+                this.y += this.vy;
+                this.grounded = false; // نفترض أننا في الهواء حتى يثبت العكس
+                this.checkVerticalCollisions();
+
+                // السقوط في الهاوية
+                if (this.y > mapHeight * TILE_SIZE + 100) {
+                    gameOver();
+                }
+
+                // حدود الكاميرا
+                if (this.x < 0) this.x = 0;
             }
-            draw() {
-                // الغلاف الجوي
-                ctx.shadowBlur = 20;
-                ctx.shadowColor = "#00d2ff";
-                
-                // الكوكب
-                ctx.fillStyle = "#1a5cff";
-                ctx.beginPath();
-                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
-                ctx.fill();
 
-                // قارات (رسم بسيط)
-                ctx.fillStyle = "#2ecc71";
-                ctx.beginPath();
-                ctx.arc(this.pos.x - 10, this.pos.y - 10, 10, 0, Math.PI * 2);
-                ctx.arc(this.pos.x + 15, this.pos.y + 5, 8, 0, Math.PI * 2);
-                ctx.fill();
+            checkHorizontalCollisions() {
+                // فحص التصادم مع التايلات
+                const left = Math.floor(this.x / TILE_SIZE);
+                const right = Math.floor((this.x + this.width) / TILE_SIZE);
+                const top = Math.floor(this.y / TILE_SIZE);
+                const bottom = Math.floor((this.y + this.height) / TILE_SIZE);
 
-                ctx.shadowBlur = 0;
-            }
-        }
-
-        class Asteroid {
-            constructor(x, y, isProjectile = false) {
-                this.pos = new Vector(x, y);
-                this.vel = new Vector(0, 0);
-                this.radius = ASTEROID_RADIUS;
-                this.isProjectile = isProjectile;
-                this.active = true;
-                
-                // شكل عشوائي للكويكب
-                this.vertices = [];
-                const sides = 6 + Math.floor(Math.random() * 4);
-                for (let i = 0; i < sides; i++) {
-                    const angle = (i / sides) * Math.PI * 2;
-                    const r = this.radius * (0.8 + Math.random() * 0.4);
-                    this.vertices.push({
-                        x: Math.cos(angle) * r,
-                        y: Math.sin(angle) * r
-                    });
+                // فحص الجدران
+                if (this.vx > 0) { // يتحرك يمين
+                    if (isSolid(right, top) || isSolid(right, bottom)) {
+                        this.x = right * TILE_SIZE - this.width - 0.1;
+                        this.vx = 0;
+                    }
+                } else if (this.vx < 0) { // يتحرك يسار
+                    if (isSolid(left, top) || isSolid(left, bottom)) {
+                        this.x = (left + 1) * TILE_SIZE + 0.1;
+                        this.vx = 0;
+                    }
                 }
             }
 
-            update() {
-                if (this.isProjectile) {
-                    this.pos = this.pos.add(this.vel);
-                    // حذف إذا خرج عن الشاشة
-                    if (this.pos.x < -50 || this.pos.x > width + 50 || 
-                        this.pos.y < -50 || this.pos.y > height + 50) {
-                        this.active = false;
+            checkVerticalCollisions() {
+                const left = Math.floor(this.x / TILE_SIZE);
+                const right = Math.floor((this.x + this.width) / TILE_SIZE);
+                const top = Math.floor(this.y / TILE_SIZE);
+                const bottom = Math.floor((this.y + this.height) / TILE_SIZE);
+
+                if (this.vy > 0) { // يسقط لأسفل
+                    // تأكد من أننا نفحص النقطة أسفل أقدامنا مباشرة
+                    if (isSolid(left, bottom) || isSolid(right, bottom)) {
+                        // هبطنا على الأرض
+                        this.y = bottom * TILE_SIZE - this.height - 0.1;
+                        this.vy = 0;
+                        this.grounded = true;
+                    }
+                } else if (this.vy < 0) { // يقفز لأعلى
+                    if (isSolid(left, top) || isSolid(right, top)) {
+                        // ضربنا السقف
+                        this.y = (top + 1) * TILE_SIZE + 0.1;
+                        this.vy = 0;
                     }
                 }
             }
 
             draw() {
-                ctx.save();
-                ctx.translate(this.pos.x, this.pos.y);
-                // تدوير بسيط
-                if (this.isProjectile) ctx.rotate(Date.now() / 200);
+                // رسم اللاعب (شكل بسيط بستايل ماريو)
+                ctx.fillStyle = this.color;
                 
-                ctx.fillStyle = "#888";
-                ctx.beginPath();
-                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
-                for (let i = 1; i < this.vertices.length; i++) {
-                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                // الجسم
+                ctx.fillRect(this.x - camera.x, this.y - camera.y, this.width, this.height);
+                
+                // القبعة (زينة بسيطة)
+                ctx.fillStyle = '#c0392b';
+                ctx.fillRect(this.x - camera.x - 2, this.y - camera.y, this.width + 4, 10);
+                
+                // العين
+                ctx.fillStyle = 'white';
+                if (this.facingRight) {
+                    ctx.fillRect(this.x - camera.x + this.width - 10, this.y - camera.y + 8, 8, 8);
+                    ctx.fillStyle = 'black';
+                    ctx.fillRect(this.x - camera.x + this.width - 6, this.y - camera.y + 10, 4, 4);
+                } else {
+                    ctx.fillRect(this.x - camera.x + 2, this.y - camera.y + 8, 8, 8);
+                    ctx.fillStyle = 'black';
+                    ctx.fillRect(this.x - camera.x + 2, this.y - camera.y + 10, 4, 4);
                 }
-                ctx.closePath();
-                ctx.fill();
-                
-                // تظليل
-                ctx.strokeStyle = "#555";
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                ctx.restore();
             }
         }
 
         class Enemy {
-            constructor() {
-                // تحديد موقع عشوائي عند الحواف
-                const edge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
-                if (edge === 0) { this.pos = new Vector(Math.random() * width, -30); }
-                else if (edge === 1) { this.pos = new Vector(width + 30, Math.random() * height); }
-                else if (edge === 2) { this.pos = new Vector(Math.random() * width, height + 30); }
-                else { this.pos = new Vector(-30, Math.random() * height); }
-
-                this.radius = ENEMY_RADIUS;
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = TILE_SIZE;
+                this.height = TILE_SIZE;
+                this.vx = -2; // يتحرك لليسار افتراضياً
                 this.active = true;
-                
-                // التحرك نحو الأرض
-                const target = earth.pos;
-                const dir = target.sub(this.pos).normalize();
-                this.vel = dir.mult(1.5 + Math.random()); // سرعة عشوائية
             }
 
             update() {
-                this.pos = this.pos.add(this.vel);
+                if (!this.active) return;
                 
-                // التحقق من الاصطدام بالأرض
-                const dist = this.pos.sub(earth.pos).mag();
-                if (dist < this.radius + earth.radius) {
-                    gameOver();
+                this.x += this.vx;
+
+                // الذكاء الاصطناعي البسيط: انعكس عند الجدران أو الحواف
+                const left = Math.floor(this.x / TILE_SIZE);
+                const right = Math.floor((this.x + this.width) / TILE_SIZE);
+                const bottom = Math.floor((this.y + this.height + 1) / TILE_SIZE);
+                const centerY = Math.floor((this.y + this.height/2) / TILE_SIZE);
+
+                // الاصطدام بالجدران
+                if (this.vx < 0 && isSolid(left, centerY)) {
+                    this.vx *= -1;
+                } else if (this.vx > 0 && isSolid(right, centerY)) {
+                    this.vx *= -1;
                 }
+
+                // عدم السقوط من الحواف (اختياري، لنجعلهم أغبياء قليلاً مثل ماريو)
+                // إذا أردناهم أذكياء:
+                /*
+                if (this.vx < 0 && !isSolid(left, bottom)) this.vx *= -1;
+                if (this.vx > 0 && !isSolid(right, bottom)) this.vx *= -1;
+                */
             }
 
             draw() {
-                ctx.save();
-                ctx.translate(this.pos.x, this.pos.y);
-                // تدوير نحو اتجاه الحركة
-                const angle = Math.atan2(this.vel.y, this.vel.x);
-                ctx.rotate(angle);
+                if (!this.active) return;
+                // رسم "Goomba"
+                const screenX = this.x - camera.x;
+                const screenY = this.y - camera.y;
 
-                // رسم السفينة المعادية
-                ctx.fillStyle = "#ff4b1f";
+                // لا نرسم إذا كان خارج الشاشة
+                if (screenX < -50 || screenX > canvas.width + 50) return;
+
+                // الجسم
+                ctx.fillStyle = '#8e44ad'; // بنفسجي للوحش
                 ctx.beginPath();
-                ctx.moveTo(15, 0);
-                ctx.lineTo(-10, 10);
-                ctx.lineTo(-5, 0);
-                ctx.lineTo(-10, -10);
-                ctx.closePath();
+                ctx.moveTo(screenX + 5, screenY + TILE_SIZE);
+                ctx.lineTo(screenX + TILE_SIZE/2, screenY);
+                ctx.lineTo(screenX + TILE_SIZE - 5, screenY + TILE_SIZE);
+                ctx.fill();
+
+                // العيون
+                ctx.fillStyle = 'white';
+                ctx.fillRect(screenX + 10, screenY + 15, 8, 8);
+                ctx.fillRect(screenX + 22, screenY + 15, 8, 8);
+                ctx.fillStyle = 'red';
+                ctx.fillRect(screenX + 12, screenY + 17, 4, 4);
+                ctx.fillRect(screenX + 24, screenY + 17, 4, 4);
+            }
+        }
+
+        class Coin {
+            constructor(x, y) {
+                this.x = x + TILE_SIZE/4;
+                this.y = y + TILE_SIZE/4;
+                this.size = TILE_SIZE/2;
+                this.baseY = this.y;
+                this.floatOffset = Math.random() * Math.PI * 2;
+                this.active = true;
+            }
+
+            update() {
+                // تأثير الطفو
+                this.floatOffset += 0.1;
+                this.y = this.baseY + Math.sin(this.floatOffset) * 5;
+            }
+
+            draw() {
+                if (!this.active) return;
+                const screenX = this.x - camera.x;
+                const screenY = this.y - camera.y;
+
+                if (screenX < -50 || screenX > canvas.width + 50) return;
+
+                ctx.fillStyle = '#f1c40f';
+                ctx.beginPath();
+                ctx.arc(screenX + this.size/2, screenY + this.size/2, this.size/2, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // محرك متوهج
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = "orange";
-                ctx.fillStyle = "#ffcc00";
+                ctx.fillStyle = '#f39c12';
                 ctx.beginPath();
-                ctx.arc(-8, 0, 3, 0, Math.PI * 2);
+                ctx.arc(screenX + this.size/2, screenY + this.size/2, this.size/3, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.shadowBlur = 0;
-
-                ctx.restore();
             }
         }
 
         class Particle {
             constructor(x, y, color) {
-                this.pos = new Vector(x, y);
-                this.vel = new Vector((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5);
+                this.x = x;
+                this.y = y;
+                this.vx = (Math.random() - 0.5) * 4;
+                this.vy = (Math.random() - 0.5) * 4;
                 this.life = 1.0;
                 this.color = color;
-                this.size = Math.random() * 3 + 1;
             }
             update() {
-                this.pos = this.pos.add(this.vel);
-                this.life -= 0.03;
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= 0.05;
             }
             draw() {
                 ctx.globalAlpha = this.life;
                 ctx.fillStyle = this.color;
-                ctx.beginPath();
-                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.fillRect(this.x - camera.x, this.y - camera.y, 4, 4);
                 ctx.globalAlpha = 1.0;
             }
         }
 
-        // إعداد الصفحة
-        function resize() {
-            width = window.innerWidth;
-            height = window.innerHeight;
-            canvas.width = width;
-            canvas.height = height;
-            if(earth) earth.pos = new Vector(width/2, height/2);
-            if(playerAsteroid && !isDragging) {
-                playerAsteroid.pos = new Vector(width/2, height/2 + EARTH_RADIUS + 30);
+        let player;
+
+        function isSolid(x, y) {
+            // حدود الخريطة
+            if (y >= mapHeight) return false; // سقط في الهاوية
+            if (x < 0 || x >= mapWidth) return true; // جدران العالم
+            
+            // التايلات الصلبة هي رقم 1
+            if (tiles[y] && tiles[y][x] === 1) return true;
+            return false;
+        }
+
+        function createDust(x, y) {
+            for(let i=0; i<5; i++) {
+                particles.push(new Particle(x, y, '#ecf0f1'));
             }
-            stars = [];
-            for (let i = 0; i < 100; i++) stars.push(new Star());
+        }
+
+        function initLevel() {
+            tiles = [];
+            coins = [];
+            enemies = [];
+            
+            mapHeight = levelMapDesign.length;
+            mapWidth = levelMapDesign[0].length;
+
+            for (let y = 0; y < mapHeight; y++) {
+                let row = [];
+                for (let x = 0; x < mapWidth; x++) {
+                    const char = levelMapDesign[y][x];
+                    if (char === '1') {
+                        row.push(1); // أرض
+                    } else if (char === '2') {
+                        coins.push(new Coin(x * TILE_SIZE, y * TILE_SIZE));
+                        row.push(0);
+                    } else if (char === '3') {
+                        enemies.push(new Enemy(x * TILE_SIZE, y * TILE_SIZE));
+                        row.push(0);
+                    } else if (char === '9') {
+                        finishLine = { x: x * TILE_SIZE, y: y * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE * 3 };
+                        row.push(0);
+                    } else {
+                        row.push(0);
+                    }
+                }
+                tiles.push(row);
+            }
+
+            player = new Player(100, 100);
+            score = 0;
+            scoreEl.innerText = score;
+        }
+
+        function startGame() {
+            gameState = 'PLAYING';
+            overlay.classList.add('hidden');
+            initLevel();
+            resize();
+            loop();
+        }
+
+        function gameOver(win = false) {
+            gameState = win ? 'WIN' : 'GAMEOVER';
+            overlay.classList.remove('hidden');
+            const h1 = overlay.querySelector('h1');
+            const btn = overlay.querySelector('button');
+            const p = overlay.querySelector('p');
+
+            if (win) {
+                h1.innerText = "🎉 مبروك! فزت 🎉";
+                h1.style.color = "#2ecc71";
+                p.innerText = "لقد جمعت " + score + " نقطة!";
+            } else {
+                h1.innerText = "خسرت!";
+                h1.style.color = "#e74c3c";
+                p.innerText = "حاول مرة أخرى لتجاوز العقبات.";
+            }
+            btn.innerText = "العب مجدداً";
+            btn.onclick = startGame;
+        }
+
+        function update() {
+            if (gameState !== 'PLAYING') return;
+
+            player.update();
+
+            // تحديث الكاميرا لتتبع اللاعب
+            // الهدف: وضع اللاعب في منتصف الشاشة أفقياً
+            let targetCamX = player.x - canvas.width / 2 + player.width / 2;
+            
+            // حدود الكاميرا (لا تخرج عن العالم)
+            targetCamX = Math.max(0, targetCamX);
+            targetCamX = Math.min(targetCamX, mapWidth * TILE_SIZE - canvas.width);
+            
+            // تنعيم حركة الكاميرا (Lerp)
+            camera.x += (targetCamX - camera.x) * 0.1;
+            
+            // الكاميرا العمودية (بسيطة، تتبع قليلاً إذا سقط)
+            let targetCamY = player.y - canvas.height / 2;
+            targetCamY = Math.max(0, targetCamY);
+            targetCamY = Math.min(targetCamY, mapHeight * TILE_SIZE - canvas.height);
+            camera.y += (targetCamY - camera.y) * 0.1;
+
+
+            // تحديث العملات
+            coins.forEach(coin => coin.update());
+            // التحقق من جمع العملات
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const c = coins[i];
+                if (!c.active) continue;
+                // تصادم بسيط دائرة بمربع
+                if (player.x < c.x + c.size &&
+                    player.x + player.width > c.x &&
+                    player.y < c.y + c.size &&
+                    player.y + player.height > c.y) {
+                    
+                    c.active = false;
+                    score += 10;
+                    scoreEl.innerText = score;
+                    // تأثير بصري
+                    for(let k=0; k<8; k++) particles.push(new Particle(c.x, c.y, '#f1c40f'));
+                }
+            }
+
+            // تحديث الأعداء
+            enemies.forEach(enemy => enemy.update());
+            // التحقق من تصادم الأعداء
+            for (let e of enemies) {
+                if (!e.active) continue;
+                
+                // AABB Collision
+                if (player.x < e.x + e.width - 5 &&
+                    player.x + player.width > e.x + 5 &&
+                    player.y < e.y + e.height &&
+                    player.y + player.height > e.y) {
+                    
+                    // هل قفز اللاعب فوق العدو؟
+                    // اللاعب يسقط (vy > 0) وكان فوق العدو
+                    if (player.vy > 0 && player.y + player.height < e.y + e.height/2 + 10) {
+                        e.active = false;
+                        player.vy = -8; // قفزة صغيرة
+                        score += 50;
+                        scoreEl.innerText = score;
+                        createDust(e.x + e.width/2, e.y + e.height/2);
+                    } else {
+                        // اللاعب اصطدم بالعدو من الجانب أو الأسفل -> خسارة
+                        gameOver();
+                    }
+                }
+            }
+
+            // تحديث الجسيمات
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+
+            // التحقق من الفوز
+            if (finishLine) {
+                if (player.x > finishLine.x && player.x < finishLine.x + finishLine.w) {
+                    gameOver(true);
+                }
+            }
+        }
+
+        function draw() {
+            // الخلفية
+            ctx.fillStyle = '#5c94fc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // رسم التايلات (الأرض)
+            const startCol = Math.floor(camera.x / TILE_SIZE);
+            const endCol = startCol + (canvas.width / TILE_SIZE) + 1;
+            const startRow = Math.floor(camera.y / TILE_SIZE);
+            const endRow = startRow + (canvas.height / TILE_SIZE) + 1;
+
+            for (let y = 0; y < mapHeight; y++) { // تحسين: ارسم فقط المرئي
+                for (let x = startCol; x <= endCol; x++) {
+                    if (x >= 0 && x < mapWidth && tiles[y] && tiles[y][x] === 1) {
+                        // رسم مكعب الأرض
+                        const drawX = Math.floor(x * TILE_SIZE - camera.x);
+                        const drawY = Math.floor(y * TILE_SIZE - camera.y);
+                        
+                        // اللون الأساسي
+                        ctx.fillStyle = '#e67e22'; // بني برتقالي
+                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                        
+                        // العشب في الأعلى
+                        ctx.fillStyle = '#2ecc71';
+                        ctx.fillRect(drawX, drawY, TILE_SIZE, 6);
+
+                        // تفاصيل الطوب
+                        ctx.strokeStyle = '#d35400';
+                        ctx.strokeRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+
+            // رسم خط النهاية
+            if (finishLine) {
+                ctx.fillStyle = '#ecf0f1';
+                ctx.fillRect(finishLine.x - camera.x + 10, finishLine.y - camera.y - 100, 5, 200);
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath();
+                ctx.moveTo(finishLine.x - camera.x + 15, finishLine.y - camera.y - 100);
+                ctx.lineTo(finishLine.x - camera.x + 50, finishLine.y - camera.y - 80);
+                ctx.lineTo(finishLine.x - camera.x + 15, finishLine.y - camera.y - 60);
+                ctx.fill();
+            }
+
+            coins.forEach(c => c.draw());
+            enemies.forEach(e => e.draw());
+            player.draw();
+            particles.forEach(p => p.draw());
+        }
+
+        function loop() {
+            if (gameState === 'PLAYING') {
+                update();
+                draw();
+                animationId = requestAnimationFrame(loop);
+            }
+        }
+
+        function resize() {
+            canvas.width = document.getElementById('game-container').offsetWidth;
+            canvas.height = document.getElementById('game-container').offsetHeight;
+            if(gameState === 'PLAYING') draw();
         }
 
         window.addEventListener('resize', resize);
 
-        // التحكم
-        function handleStart(x, y) {
-            if (!gameActive) return;
-            const mousePos = new Vector(x, y);
-            // هل الضغط قريب من الكويكب؟
-            if (mousePos.sub(playerAsteroid.pos).mag() < 50) {
-                isDragging = true;
-                dragStart = mousePos; // لا يهم كثيراً لأننا نحسب الفرق عن الكويكب
-            }
-        }
+        // التعامل مع المدخلات (لوحة المفاتيح)
+        window.addEventListener('keydown', e => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyW') keys.up = true;
+        });
 
-        function handleMove(x, y) {
-            if (isDragging) {
-                currentDrag = new Vector(x, y);
-            }
-        }
+        window.addEventListener('keyup', e => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyW') keys.up = false;
+        });
 
-        function handleEnd() {
-            if (isDragging) {
-                // إطلاق الكويكب
-                const startPos = new Vector(width/2, height/2 + EARTH_RADIUS + 30); // الموقع الأصلي
-                
-                // حساب القوة بناءً على السحب
-                // القوة عكس اتجاه السحب
-                let force = startPos.sub(currentDrag);
-                
-                // تحديد الحد الأقصى للقوة
-                if (force.mag() > 150) {
-                    force = force.normalize().mult(150);
-                }
+        // التعامل مع المدخلات (اللمس للموبايل)
+        const btnLeft = document.getElementById('btn-left');
+        const btnRight = document.getElementById('btn-right');
+        const btnJump = document.getElementById('btn-jump');
 
-                const velocity = force.mult(0.15); // عامل السرعة
+        const addTouch = (elem, key) => {
+            elem.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+            elem.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+            elem.addEventListener('mousedown', (e) => { keys[key] = true; });
+            elem.addEventListener('mouseup', (e) => { keys[key] = false; });
+        };
 
-                playerAsteroid.vel = velocity;
-                playerAsteroid.isProjectile = true;
-                projectiles.push(playerAsteroid);
+        addTouch(btnLeft, 'left');
+        addTouch(btnRight, 'right');
+        addTouch(btnJump, 'up');
 
-                // إنشاء كويكب جديد
-                createNewPlayerAsteroid();
-                
-                isDragging = false;
-                currentDrag = null;
-            }
-        }
+        // منع القوائم المنبثقة عند النقر المطول على الموبايل
+        document.addEventListener('contextmenu', event => event.preventDefault());
 
-        // Mouse Events
-        canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
-        canvas.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
-        window.addEventListener('mouseup', handleEnd);
-
-        // Touch Events
-        canvas.addEventListener('touchstart', e => {
-            handleStart(e.touches[0].clientX, e.touches[0].clientY);
-            // e.preventDefault(); // Remove to allow click interaction if needed
-        }, {passive: false});
-        canvas.addEventListener('touchmove', e => {
-            handleMove(e.touches[0].clientX, e.touches[0].clientY);
-            e.preventDefault(); 
-        }, {passive: false});
-        window.addEventListener('touchend', handleEnd);
-
-        function createNewPlayerAsteroid() {
-            // نضعه في مدار ثابت أسفل الأرض للسهولة
-            playerAsteroid = new Asteroid(width/2, height/2 + EARTH_RADIUS + 30);
-        }
-
-        function createExplosion(x, y, color = "#ffaa00") {
-            for (let i = 0; i < 15; i++) {
-                particles.push(new Particle(x, y, color));
-            }
-        }
-
-        function startGame() {
-            resize();
-            earth = new Earth();
-            createNewPlayerAsteroid();
-            enemies = [];
-            projectiles = [];
-            particles = [];
-            score = 0;
-            scoreEl.innerText = score;
-            gameActive = true;
-            lastTime = 0;
-            
-            startScreen.classList.add('hidden');
-            gameOverScreen.classList.add('hidden');
-            
-            cancelAnimationFrame(animationId);
-            loop(0);
-        }
-
-        function resetGame() {
-            startGame();
-        }
-
-        function gameOver() {
-            gameActive = false;
-            finalScoreEl.innerText = score;
-            gameOverScreen.classList.remove('hidden');
-        }
-
-        function loop(timestamp) {
-            if (!gameActive) return;
-
-            const dt = timestamp - lastTime;
-            lastTime = timestamp;
-
-            // مسح الشاشة
-            ctx.fillStyle = "#0b0e14";
-            ctx.fillRect(0, 0, width, height);
-
-            // الخلفية
-            stars.forEach(s => { s.update(); s.draw(); });
-
-            // الأرض
-            earth.draw();
-
-            // Spawn Enemies
-            if (timestamp - lastSpawnTime > SPAWN_RATE - (score * 5)) { // تزداد الصعوبة
-                enemies.push(new Enemy());
-                lastSpawnTime = timestamp;
-            }
-
-            // تحديث ورسم المقذوفات
-            projectiles.forEach((p, pIndex) => {
-                p.update();
-                p.draw();
-                if (!p.active) projectiles.splice(pIndex, 1);
-            });
-
-            // تحديث ورسم الأعداء والاصطدامات
-            enemies.forEach((e, eIndex) => {
-                e.update();
-                e.draw();
-
-                // اصطدام بالمقذوفات
-                projectiles.forEach((p, pIndex) => {
-                    if (!p.active || !e.active) return;
-                    const dist = p.pos.sub(e.pos).mag();
-                    if (dist < p.radius + e.radius) {
-                        // تدمير العدو والكويكب
-                        createExplosion(e.pos.x, e.pos.y, "#ff4b1f");
-                        createExplosion(p.pos.x, p.pos.y, "#888");
-                        e.active = false;
-                        p.active = false; // يمكن للكويكب أن يكمل طريقه إذا أردنا قوة خارقة
-                        score += 10;
-                        scoreEl.innerText = score;
-                    }
-                });
-            });
-            enemies = enemies.filter(e => e.active);
-
-            // تحديث ورسم الجسيمات
-            particles.forEach((p, pIndex) => {
-                p.update();
-                p.draw();
-                if (p.life <= 0) particles.splice(pIndex, 1);
-            });
-
-            // رسم كويكب اللاعب الحالي والمسار
-            if (playerAsteroid) {
-                // منطق السحب (Drag Visuals)
-                if (isDragging && currentDrag) {
-                    const startPos = playerAsteroid.pos;
-                    
-                    // رسم خط المطاط
-                    ctx.beginPath();
-                    ctx.moveTo(startPos.x, startPos.y);
-                    ctx.lineTo(currentDrag.x, currentDrag.y);
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([5, 5]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-
-                    // رسم الكويكب في موقع الماوس (اختياري، أو نتركه في مكانه ونرسم مؤشر)
-                    // هنا سنتركه في مكانه ونرسم مؤشر عكسي للاتجاه
-                    
-                    const force = startPos.sub(currentDrag);
-                    let aimVector = force;
-                    if (aimVector.mag() > 150) aimVector = aimVector.normalize().mult(150);
-                    
-                    // رسم خط التوجيه
-                    ctx.beginPath();
-                    ctx.moveTo(startPos.x, startPos.y);
-                    ctx.lineTo(startPos.x + aimVector.x * 2, startPos.y + aimVector.y * 2);
-                    ctx.strokeStyle = "rgba(255, 50, 50, 0.8)";
-                    ctx.lineWidth = 3;
-                    ctx.stroke();
-                }
-
-                playerAsteroid.draw();
-            }
-
-            animationId = requestAnimationFrame(loop);
-        }
-
-        // التشغيل الأولي
+        // البدء
         resize();
-        
+
     </script>
 </body>
 </html>
