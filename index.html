@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>قاذف الكويكبات</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0b0e14;
+            font-family: 'Cairo', sans-serif;
+            touch-action: none; /* لمنع التكبير والتمرير في الهواتف */
+            user-select: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .score-board {
+            color: #fff;
+            font-size: 24px;
+            text-shadow: 0 0 10px #00d2ff;
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 40px;
+            margin-bottom: 10px;
+            color: #ffcc00;
+            text-align: center;
+        }
+
+        p {
+            font-size: 18px;
+            color: #ccc;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        button {
+            background: linear-gradient(45deg, #ff4b1f, #ff9068);
+            border: none;
+            padding: 15px 40px;
+            color: white;
+            font-size: 20px;
+            font-family: 'Cairo', sans-serif;
+            border-radius: 50px;
+            cursor: pointer;
+            margin-top: 20px;
+            box-shadow: 0 4px 15px rgba(255, 75, 31, 0.4);
+            transition: transform 0.2s;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div class="score-board">النقاط: <span id="scoreVal">0</span></div>
+    </div>
+
+    <!-- شاشة البداية -->
+    <div id="start-screen">
+        <h1>قاذف الكويكبات</h1>
+        <p>اسحب الكويكب للخلف ثم أفلته لإطلاقه نحو الأعداء.</p>
+        <p>احمِ الأرض من الغزاة!</p>
+        <button onclick="startGame()">ابدأ اللعب</button>
+    </div>
+
+    <!-- شاشة نهاية اللعبة -->
+    <div id="game-over-screen" class="hidden">
+        <h1>انتهت اللعبة</h1>
+        <p>النقاط النهائية: <span id="finalScore">0</span></p>
+        <button onclick="resetGame()">العب مجدداً</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('scoreVal');
+        const finalScoreEl = document.getElementById('finalScore');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+
+        let width, height;
+        let animationId;
+        let lastTime = 0;
+        let score = 0;
+        let gameActive = false;
+
+        // إعدادات اللعبة
+        const EARTH_RADIUS = 40;
+        const ASTEROID_RADIUS = 15;
+        const ENEMY_RADIUS = 20;
+        const SPAWN_RATE = 1500; // مللي ثانية
+
+        // حالة الإدخال (الماوس/اللمس)
+        let dragStart = null;
+        let currentDrag = null;
+        let isDragging = false;
+        
+        // الكائنات
+        let earth;
+        let playerAsteroid;
+        let enemies = [];
+        let projectiles = []; // الكويكبات التي تم إطلاقها
+        let particles = [];
+        let stars = [];
+        let lastSpawnTime = 0;
+
+        // فئات اللعبة (Classes)
+
+        class Vector {
+            constructor(x, y) { this.x = x; this.y = y; }
+            add(v) { return new Vector(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+            mult(n) { return new Vector(this.x * n, this.y * n); }
+            mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+            normalize() {
+                let m = this.mag();
+                return m === 0 ? new Vector(0, 0) : new Vector(this.x / m, this.y / m);
+            }
+        }
+
+        class Star {
+            constructor() {
+                this.pos = new Vector(Math.random() * width, Math.random() * height);
+                this.size = Math.random() * 2;
+                this.alpha = Math.random();
+                this.twinkleSpeed = Math.random() * 0.05;
+            }
+            update() {
+                this.alpha += this.twinkleSpeed;
+                if (this.alpha > 1 || this.alpha < 0) this.twinkleSpeed *= -1;
+            }
+            draw() {
+                ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(this.alpha)})`;
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        class Earth {
+            constructor() {
+                this.pos = new Vector(width / 2, height / 2);
+                this.radius = EARTH_RADIUS;
+                this.health = 100;
+            }
+            draw() {
+                // الغلاف الجوي
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = "#00d2ff";
+                
+                // الكوكب
+                ctx.fillStyle = "#1a5cff";
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // قارات (رسم بسيط)
+                ctx.fillStyle = "#2ecc71";
+                ctx.beginPath();
+                ctx.arc(this.pos.x - 10, this.pos.y - 10, 10, 0, Math.PI * 2);
+                ctx.arc(this.pos.x + 15, this.pos.y + 5, 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class Asteroid {
+            constructor(x, y, isProjectile = false) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector(0, 0);
+                this.radius = ASTEROID_RADIUS;
+                this.isProjectile = isProjectile;
+                this.active = true;
+                
+                // شكل عشوائي للكويكب
+                this.vertices = [];
+                const sides = 6 + Math.floor(Math.random() * 4);
+                for (let i = 0; i < sides; i++) {
+                    const angle = (i / sides) * Math.PI * 2;
+                    const r = this.radius * (0.8 + Math.random() * 0.4);
+                    this.vertices.push({
+                        x: Math.cos(angle) * r,
+                        y: Math.sin(angle) * r
+                    });
+                }
+            }
+
+            update() {
+                if (this.isProjectile) {
+                    this.pos = this.pos.add(this.vel);
+                    // حذف إذا خرج عن الشاشة
+                    if (this.pos.x < -50 || this.pos.x > width + 50 || 
+                        this.pos.y < -50 || this.pos.y > height + 50) {
+                        this.active = false;
+                    }
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                // تدوير بسيط
+                if (this.isProjectile) ctx.rotate(Date.now() / 200);
+                
+                ctx.fillStyle = "#888";
+                ctx.beginPath();
+                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
+                for (let i = 1; i < this.vertices.length; i++) {
+                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                
+                // تظليل
+                ctx.strokeStyle = "#555";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        class Enemy {
+            constructor() {
+                // تحديد موقع عشوائي عند الحواف
+                const edge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+                if (edge === 0) { this.pos = new Vector(Math.random() * width, -30); }
+                else if (edge === 1) { this.pos = new Vector(width + 30, Math.random() * height); }
+                else if (edge === 2) { this.pos = new Vector(Math.random() * width, height + 30); }
+                else { this.pos = new Vector(-30, Math.random() * height); }
+
+                this.radius = ENEMY_RADIUS;
+                this.active = true;
+                
+                // التحرك نحو الأرض
+                const target = earth.pos;
+                const dir = target.sub(this.pos).normalize();
+                this.vel = dir.mult(1.5 + Math.random()); // سرعة عشوائية
+            }
+
+            update() {
+                this.pos = this.pos.add(this.vel);
+                
+                // التحقق من الاصطدام بالأرض
+                const dist = this.pos.sub(earth.pos).mag();
+                if (dist < this.radius + earth.radius) {
+                    gameOver();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                // تدوير نحو اتجاه الحركة
+                const angle = Math.atan2(this.vel.y, this.vel.x);
+                ctx.rotate(angle);
+
+                // رسم السفينة المعادية
+                ctx.fillStyle = "#ff4b1f";
+                ctx.beginPath();
+                ctx.moveTo(15, 0);
+                ctx.lineTo(-10, 10);
+                ctx.lineTo(-5, 0);
+                ctx.lineTo(-10, -10);
+                ctx.closePath();
+                ctx.fill();
+                
+                // محرك متوهج
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = "orange";
+                ctx.fillStyle = "#ffcc00";
+                ctx.beginPath();
+                ctx.arc(-8, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector((Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5);
+                this.life = 1.0;
+                this.color = color;
+                this.size = Math.random() * 3 + 1;
+            }
+            update() {
+                this.pos = this.pos.add(this.vel);
+                this.life -= 0.03;
+            }
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        // إعداد الصفحة
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+            if(earth) earth.pos = new Vector(width/2, height/2);
+            if(playerAsteroid && !isDragging) {
+                playerAsteroid.pos = new Vector(width/2, height/2 + EARTH_RADIUS + 30);
+            }
+            stars = [];
+            for (let i = 0; i < 100; i++) stars.push(new Star());
+        }
+
+        window.addEventListener('resize', resize);
+
+        // التحكم
+        function handleStart(x, y) {
+            if (!gameActive) return;
+            const mousePos = new Vector(x, y);
+            // هل الضغط قريب من الكويكب؟
+            if (mousePos.sub(playerAsteroid.pos).mag() < 50) {
+                isDragging = true;
+                dragStart = mousePos; // لا يهم كثيراً لأننا نحسب الفرق عن الكويكب
+            }
+        }
+
+        function handleMove(x, y) {
+            if (isDragging) {
+                currentDrag = new Vector(x, y);
+            }
+        }
+
+        function handleEnd() {
+            if (isDragging) {
+                // إطلاق الكويكب
+                const startPos = new Vector(width/2, height/2 + EARTH_RADIUS + 30); // الموقع الأصلي
+                
+                // حساب القوة بناءً على السحب
+                // القوة عكس اتجاه السحب
+                let force = startPos.sub(currentDrag);
+                
+                // تحديد الحد الأقصى للقوة
+                if (force.mag() > 150) {
+                    force = force.normalize().mult(150);
+                }
+
+                const velocity = force.mult(0.15); // عامل السرعة
+
+                playerAsteroid.vel = velocity;
+                playerAsteroid.isProjectile = true;
+                projectiles.push(playerAsteroid);
+
+                // إنشاء كويكب جديد
+                createNewPlayerAsteroid();
+                
+                isDragging = false;
+                currentDrag = null;
+            }
+        }
+
+        // Mouse Events
+        canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+        window.addEventListener('mouseup', handleEnd);
+
+        // Touch Events
+        canvas.addEventListener('touchstart', e => {
+            handleStart(e.touches[0].clientX, e.touches[0].clientY);
+            // e.preventDefault(); // Remove to allow click interaction if needed
+        }, {passive: false});
+        canvas.addEventListener('touchmove', e => {
+            handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            e.preventDefault(); 
+        }, {passive: false});
+        window.addEventListener('touchend', handleEnd);
+
+        function createNewPlayerAsteroid() {
+            // نضعه في مدار ثابت أسفل الأرض للسهولة
+            playerAsteroid = new Asteroid(width/2, height/2 + EARTH_RADIUS + 30);
+        }
+
+        function createExplosion(x, y, color = "#ffaa00") {
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function startGame() {
+            resize();
+            earth = new Earth();
+            createNewPlayerAsteroid();
+            enemies = [];
+            projectiles = [];
+            particles = [];
+            score = 0;
+            scoreEl.innerText = score;
+            gameActive = true;
+            lastTime = 0;
+            
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            
+            cancelAnimationFrame(animationId);
+            loop(0);
+        }
+
+        function resetGame() {
+            startGame();
+        }
+
+        function gameOver() {
+            gameActive = false;
+            finalScoreEl.innerText = score;
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        function loop(timestamp) {
+            if (!gameActive) return;
+
+            const dt = timestamp - lastTime;
+            lastTime = timestamp;
+
+            // مسح الشاشة
+            ctx.fillStyle = "#0b0e14";
+            ctx.fillRect(0, 0, width, height);
+
+            // الخلفية
+            stars.forEach(s => { s.update(); s.draw(); });
+
+            // الأرض
+            earth.draw();
+
+            // Spawn Enemies
+            if (timestamp - lastSpawnTime > SPAWN_RATE - (score * 5)) { // تزداد الصعوبة
+                enemies.push(new Enemy());
+                lastSpawnTime = timestamp;
+            }
+
+            // تحديث ورسم المقذوفات
+            projectiles.forEach((p, pIndex) => {
+                p.update();
+                p.draw();
+                if (!p.active) projectiles.splice(pIndex, 1);
+            });
+
+            // تحديث ورسم الأعداء والاصطدامات
+            enemies.forEach((e, eIndex) => {
+                e.update();
+                e.draw();
+
+                // اصطدام بالمقذوفات
+                projectiles.forEach((p, pIndex) => {
+                    if (!p.active || !e.active) return;
+                    const dist = p.pos.sub(e.pos).mag();
+                    if (dist < p.radius + e.radius) {
+                        // تدمير العدو والكويكب
+                        createExplosion(e.pos.x, e.pos.y, "#ff4b1f");
+                        createExplosion(p.pos.x, p.pos.y, "#888");
+                        e.active = false;
+                        p.active = false; // يمكن للكويكب أن يكمل طريقه إذا أردنا قوة خارقة
+                        score += 10;
+                        scoreEl.innerText = score;
+                    }
+                });
+            });
+            enemies = enemies.filter(e => e.active);
+
+            // تحديث ورسم الجسيمات
+            particles.forEach((p, pIndex) => {
+                p.update();
+                p.draw();
+                if (p.life <= 0) particles.splice(pIndex, 1);
+            });
+
+            // رسم كويكب اللاعب الحالي والمسار
+            if (playerAsteroid) {
+                // منطق السحب (Drag Visuals)
+                if (isDragging && currentDrag) {
+                    const startPos = playerAsteroid.pos;
+                    
+                    // رسم خط المطاط
+                    ctx.beginPath();
+                    ctx.moveTo(startPos.x, startPos.y);
+                    ctx.lineTo(currentDrag.x, currentDrag.y);
+                    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([5, 5]);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // رسم الكويكب في موقع الماوس (اختياري، أو نتركه في مكانه ونرسم مؤشر)
+                    // هنا سنتركه في مكانه ونرسم مؤشر عكسي للاتجاه
+                    
+                    const force = startPos.sub(currentDrag);
+                    let aimVector = force;
+                    if (aimVector.mag() > 150) aimVector = aimVector.normalize().mult(150);
+                    
+                    // رسم خط التوجيه
+                    ctx.beginPath();
+                    ctx.moveTo(startPos.x, startPos.y);
+                    ctx.lineTo(startPos.x + aimVector.x * 2, startPos.y + aimVector.y * 2);
+                    ctx.strokeStyle = "rgba(255, 50, 50, 0.8)";
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                }
+
+                playerAsteroid.draw();
+            }
+
+            animationId = requestAnimationFrame(loop);
+        }
+
+        // التشغيل الأولي
+        resize();
+        
+    </script>
+</body>
+</html>
